@@ -162,7 +162,6 @@
   </div>
 
   <script>
-  const DATA_PATH = "data/birthday_climate.csv";
   const MODEL = "MPI-ESM1-2-LR";
   const MARGIN = { top: 16, right: 36, bottom: 44, left: 56 };
 
@@ -203,7 +202,7 @@ function updateDays() {
       .map(d => `<option value="${d}"${d === current ? " selected" : ""}>${d}</option>`).join("");
 }
 
-function onDateChange() {
+async function onDateChange() {
   updateDays();
   const m = +selMonth.value, d = +selDay.value, y = +selYear.value;
   if (!m || !d || !y) return;
@@ -214,6 +213,7 @@ function onDateChange() {
   } else {
     birthDay = d;
   }
+  await loadData();
   drawChart();
 }
 
@@ -230,42 +230,20 @@ function onDateChange() {
     });
   });
 
-  async function loadData() {
-    try {
-      const raw = await d3.csv(DATA_PATH, d => ({
-        year: +d.year, variable: d.variable,
-        value: +d.value, scenario: d.scenario, model: d.model,
-      }));
-      data = raw.filter(d => d.model === MODEL);
-    } catch(e) {
-      data = makeDemoData();
-    }
+async function loadData() {
+  const mm = String(birthMonth).padStart(2, "0");
+  const dd = String(birthDay).padStart(2, "0");
+  try {
+    const raw = await d3.csv(`data/climate_${mm}_${dd}.csv`, d => ({
+      year: +d.year, variable: d.variable,
+      value: +d.value, scenario: d.scenario, model: d.model,
+    }));
+    data = raw.filter(d => d.model === MODEL);
+  } catch(e) {
+    console.error("failed to load data for", mm, dd, e);
+    data = [];
   }
-
-  function makeDemoData() {
-    const configs = {
-      tas:     { base: 14.5,   trend: 0.018,  s245: 0.022,  s585: 0.04,   noise: 0.3    },
-      pr:      { base: 2.8,    trend: 0.002,  s245: 0.003,  s585: 0.004,  noise: 0.15   },
-      sfcWind: { base: 6.2,    trend: -0.001, s245: -0.002, s585: -0.003, noise: 0.12   },
-      huss:    { base: 0.0085, trend: 3e-5,   s245: 5e-5,   s585: 9e-5,   noise: 0.0003 },
-      psl:     { base: 101200, trend: -0.5,   s245: -0.8,   s585: -1.2,   noise: 80     },
-      rsds:    { base: 185,    trend: 0.02,   s245: 0.03,   s585: 0.05,   noise: 2.5    },
-    };
-    const rows = [];
-    for (const [v, c] of Object.entries(configs)) {
-      const end = c.base + 64 * c.trend;
-      for (let y = 1950; y <= 2014; y++)
-        rows.push({ year: y, variable: v, scenario: "historical", model: MODEL,
-          value: c.base + (y-1950)*c.trend + (Math.random()-0.5)*c.noise });
-      for (let y = 2015; y <= 2100; y++) {
-        rows.push({ year: y, variable: v, scenario: "ssp245", model: MODEL,
-          value: end + (y-2014)*c.s245 + (Math.random()-0.5)*c.noise*0.7 });
-        rows.push({ year: y, variable: v, scenario: "ssp585", model: MODEL,
-          value: end + (y-2014)*c.s585 + (Math.random()-0.5)*c.noise*0.7 });
-      }
-    }
-    return rows;
-  }
+}
 
   function drawChart() {
     if (!birthYear) return;
@@ -289,10 +267,8 @@ function onDateChange() {
     svg.attr("width", width + MARGIN.left + MARGIN.right)
        .attr("height", height + MARGIN.top + MARGIN.bottom);
 
-    let g = svg.select("g.main");
-    if (g.empty()) g = svg.append("g").attr("class", "main").attr("transform", `translate(${MARGIN.left},${MARGIN.top})`);
-
-    g.selectAll(".grid, .axis, .y-label, .birth-marker, circle, .mlabel").remove();
+    svg.selectAll("g.main").remove();
+    const g = svg.append("g").attr("class", "main").attr("transform", `translate(${MARGIN.left},${MARGIN.top})`);
 
     const xScale = d3.scaleLinear()
       .domain([d3.min(varData, d => d.year), d3.max(varData, d => d.year)])
@@ -384,9 +360,7 @@ function onDateChange() {
     });
   }
 
-  loadData().then(() => {
-    window.addEventListener("resize", () => { if (birthYear) drawChart(); });
-  });
+  window.addEventListener("resize", () => { if (birthYear) drawChart(); });
   </script>
 </body>
 </html>
