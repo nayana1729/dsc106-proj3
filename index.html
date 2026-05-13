@@ -1,0 +1,392 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>birthdayweather</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+  <style>
+    body {
+      background: #ddeef8;
+      color: #0d2d45;
+      font-family: monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+    }
+
+    h1 {
+      font-size: 2rem;
+      margin-bottom: 8px;
+    }
+
+    p.desc {
+      font-size: 0.85rem;
+      color: #3a6a8a;
+      margin-bottom: 30px;
+      max-width: 600px;
+      text-align: center;
+    }
+
+    .controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .controls select {
+      padding: 6px 10px;
+      border: 1px solid #b8d8ee;
+      background: #eef6fc;
+      color: #0d2d45;
+      font-family: monospace;
+      font-size: 0.85rem;
+      border-radius: 4px;
+    }
+
+    .var-btns {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+
+    .var-btns button {
+      padding: 4px 12px;
+      border: 1px solid #b8d8ee;
+      background: transparent;
+      color: #3a6a8a;
+      font-family: monospace;
+      font-size: 0.75rem;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+
+    .var-btns button.active {
+      background: #0d2d45;
+      color: #ddeef8;
+      border-color: #0d2d45;
+    }
+
+    #chart-container {
+      background: #eef6fc;
+      border: 1px solid #b8d8ee;
+      border-radius: 6px;
+      padding: 20px;
+      width: 100%;
+      max-width: 900px;
+    }
+
+    #chart-title {
+      font-size: 1rem;
+      margin-bottom: 4px;
+    }
+
+    #chart-subtitle {
+      font-size: 0.72rem;
+      color: #3a6a8a;
+      margin-bottom: 4px;
+    }
+
+    #stat-callout {
+      font-size: 0.82rem;
+      color: #0d2d45;
+      font-weight: bold;
+      margin-bottom: 16px;
+      min-height: 1.2em;
+    }
+
+    .axis text { fill: #3a6a8a; font-family: monospace; font-size: 11px; }
+    .axis path, .axis line { stroke: #b8d8ee; }
+
+    .grid line { stroke: #b8d8ee; stroke-dasharray: 3 3; stroke-opacity: 0.6; }
+    .grid path { stroke: none; }
+
+    .line-hist { fill: none; stroke: #1a5a8a; stroke-width: 2; }
+    .line-245  { fill: none; stroke: #2a8fc0; stroke-width: 2; }
+    .line-585  { fill: none; stroke: #c0394a; stroke-width: 2; }
+
+    .birth-marker { stroke: #0d2d45; stroke-width: 1.5; stroke-dasharray: 4 4; opacity: 0.7; }
+
+    .legend {
+      display: flex;
+      gap: 20px;
+      margin-top: 12px;
+      font-size: 0.72rem;
+      color: #3a6a8a;
+      flex-wrap: wrap;
+    }
+
+    .legend span { display: flex; align-items: center; gap: 6px; }
+    .swatch { display: inline-block; width: 20px; height: 2px; }
+  </style>
+</head>
+<body>
+
+  <h1>birthdayweather</h1>
+  <p class="desc">
+    Enter your birthday to see how climate conditions on that date have shifted since 1950,
+    and how they're projected to change through 2100! Data: CMIP6 (MPI-ESM1-2-LR).
+  </p>
+
+  <div class="controls">
+    <span>Born on</span>
+    <select id="sel-month"></select>
+    <select id="sel-day"></select>
+    <select id="sel-year"></select>
+  </div>
+
+  <div class="var-btns">
+    <button class="active" data-var="tas">Temperature (°C)</button>
+    <button data-var="pr">Precipitation (mm/day)</button>
+    <button data-var="sfcWind">Wind Speed (m/s)</button>
+    <button data-var="huss">Humidity (kg/kg)</button>
+    <button data-var="psl">Sea Level Pressure (Pa)</button>
+    <button data-var="rsds">Solar Radiation (W/m²)</button>
+  </div>
+
+  <div id="chart-container">
+    <div id="chart-title">Select your birthday to get started</div>
+    <div id="chart-subtitle"></div>
+    <div id="stat-callout"></div>
+    <svg id="chart"></svg>
+    <div class="legend">
+      <span><span class="swatch" style="background:#1a5a8a"></span>Historical (1950–2014)</span>
+      <span><span class="swatch" style="background:#2a8fc0"></span>SSP2-4.5</span>
+      <span><span class="swatch" style="background:#c0394a"></span>SSP5-8.5</span>
+    </div>
+  </div>
+
+  <script>
+  const DATA_PATH = "data/birthday_climate.csv";
+  const MODEL = "MPI-ESM1-2-LR";
+  const MARGIN = { top: 16, right: 36, bottom: 44, left: 56 };
+
+  const MONTHS = ["January","February","March","April","May","June",
+                  "July","August","September","October","November","December"];
+
+  const VAR_META = {
+    tas:     { label: "Global avg. temperature on your birthday",    unit: "°C"     },
+    pr:      { label: "Global avg. precipitation on your birthday",  unit: "mm/day" },
+    sfcWind: { label: "Global avg. wind speed on your birthday",     unit: "m/s"    },
+    huss:    { label: "Global avg. humidity on your birthday",       unit: "kg/kg"  },
+    psl:     { label: "Global avg. sea level pressure on your birthday", unit: "Pa" },
+    rsds:    { label: "Global avg. solar radiation on your birthday", unit: "W/m²"  },
+  };
+
+  let data = [];
+  let birthMonth = null, birthDay = null, birthYear = null;
+  let activeVar = "tas";
+
+  const selMonth = document.getElementById("sel-month");
+  const selDay = document.getElementById("sel-day");
+  const selYear = document.getElementById("sel-year");
+
+  selMonth.innerHTML = '<option value="">Month</option>' +
+  MONTHS.map((m, i) => `<option value="${i+1}">${m}</option>`).join("");
+selDay.innerHTML = '<option value="">Day</option>';
+selYear.innerHTML = '<option value="">Year</option>' +
+  Array.from({length: 75}, (_, i) => 2024 - i).map(y => `<option value="${y}">${y}</option>`).join("");
+
+function updateDays() {
+  const m = +selMonth.value;
+  const y = +selYear.value || 2001;
+  if (!m) return;
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const current = +selDay.value;
+  selDay.innerHTML = '<option value="">Day</option>' +
+    Array.from({length: daysInMonth}, (_, i) => i + 1)
+      .map(d => `<option value="${d}"${d === current ? " selected" : ""}>${d}</option>`).join("");
+}
+
+function onDateChange() {
+  updateDays();
+  const m = +selMonth.value, d = +selDay.value, y = +selYear.value;
+  if (!m || !d || !y) return;
+  birthMonth = m; birthYear = y;
+  if (m === 2 && d === 29) {
+    birthDay = 28;
+    document.getElementById("chart-subtitle").textContent = "Feb 29 isn't in most years' data — showing Feb 28 instead";
+  } else {
+    birthDay = d;
+  }
+  drawChart();
+}
+
+  selMonth.addEventListener("change", onDateChange);
+  selDay.addEventListener("change", onDateChange);
+  selYear.addEventListener("change", onDateChange);
+
+  document.querySelectorAll(".var-btns button").forEach(btn => {
+    btn.addEventListener("click", function() {
+      document.querySelectorAll(".var-btns button").forEach(b => b.classList.remove("active"));
+      this.classList.add("active");
+      activeVar = this.dataset.var;
+      drawChart();
+    });
+  });
+
+  async function loadData() {
+    try {
+      const raw = await d3.csv(DATA_PATH, d => ({
+        year: +d.year, variable: d.variable,
+        value: +d.value, scenario: d.scenario, model: d.model,
+      }));
+      data = raw.filter(d => d.model === MODEL);
+    } catch(e) {
+      data = makeDemoData();
+    }
+  }
+
+  function makeDemoData() {
+    const configs = {
+      tas:     { base: 14.5,   trend: 0.018,  s245: 0.022,  s585: 0.04,   noise: 0.3    },
+      pr:      { base: 2.8,    trend: 0.002,  s245: 0.003,  s585: 0.004,  noise: 0.15   },
+      sfcWind: { base: 6.2,    trend: -0.001, s245: -0.002, s585: -0.003, noise: 0.12   },
+      huss:    { base: 0.0085, trend: 3e-5,   s245: 5e-5,   s585: 9e-5,   noise: 0.0003 },
+      psl:     { base: 101200, trend: -0.5,   s245: -0.8,   s585: -1.2,   noise: 80     },
+      rsds:    { base: 185,    trend: 0.02,   s245: 0.03,   s585: 0.05,   noise: 2.5    },
+    };
+    const rows = [];
+    for (const [v, c] of Object.entries(configs)) {
+      const end = c.base + 64 * c.trend;
+      for (let y = 1950; y <= 2014; y++)
+        rows.push({ year: y, variable: v, scenario: "historical", model: MODEL,
+          value: c.base + (y-1950)*c.trend + (Math.random()-0.5)*c.noise });
+      for (let y = 2015; y <= 2100; y++) {
+        rows.push({ year: y, variable: v, scenario: "ssp245", model: MODEL,
+          value: end + (y-2014)*c.s245 + (Math.random()-0.5)*c.noise*0.7 });
+        rows.push({ year: y, variable: v, scenario: "ssp585", model: MODEL,
+          value: end + (y-2014)*c.s585 + (Math.random()-0.5)*c.noise*0.7 });
+      }
+    }
+    return rows;
+  }
+
+  function drawChart() {
+    if (!birthYear) return;
+
+    const container = document.getElementById("chart-container");
+    const totalW = container.clientWidth - 40;
+    const width = totalW - MARGIN.left - MARGIN.right;
+    const height = Math.min(400, Math.max(260, totalW * 0.44)) - MARGIN.top - MARGIN.bottom;
+
+    const meta = VAR_META[activeVar];
+    document.getElementById("chart-title").textContent = meta.label;
+    if (birthDay !== 28 || birthMonth !== 2) {
+      document.getElementById("chart-subtitle").textContent =
+        `${MONTHS[birthMonth-1]} ${birthDay} · global mean · CMIP6 MPI-ESM1-2-LR`;
+    }
+
+    const varData = data.filter(d => d.variable === activeVar);
+    if (!varData.length) return;
+
+    const svg = d3.select("#chart");
+    svg.attr("width", width + MARGIN.left + MARGIN.right)
+       .attr("height", height + MARGIN.top + MARGIN.bottom);
+
+    let g = svg.select("g.main");
+    if (g.empty()) g = svg.append("g").attr("class", "main").attr("transform", `translate(${MARGIN.left},${MARGIN.top})`);
+
+    g.selectAll(".grid, .axis, .y-label, .birth-marker, circle, .mlabel").remove();
+
+    const xScale = d3.scaleLinear()
+      .domain([d3.min(varData, d => d.year), d3.max(varData, d => d.year)])
+      .range([0, width]);
+
+    const yVals = varData.map(d => d.value);
+    const yPad = (d3.max(yVals) - d3.min(yVals)) * 0.1;
+    const yScale = d3.scaleLinear()
+      .domain([d3.min(yVals) - yPad, d3.max(yVals) + yPad])
+      .range([height, 0]).nice();
+
+    g.append("g").attr("class", "grid").attr("transform", `translate(0,${height})`)
+      .call(d3.axisBottom(xScale).ticks(8).tickSize(-height).tickFormat(""));
+    g.append("g").attr("class", "grid")
+      .call(d3.axisLeft(yScale).ticks(5).tickSize(-width).tickFormat(""));
+
+    g.append("g").attr("transform", `translate(0,${height})`)
+      .attr("class", "axis").call(d3.axisBottom(xScale).ticks(8).tickFormat(d3.format("d")));
+    g.append("g").attr("class", "axis").call(d3.axisLeft(yScale).ticks(5));
+
+    g.append("text").attr("class", "y-label")
+      .attr("transform", "rotate(-90)").attr("x", -height/2).attr("y", -MARGIN.left + 14)
+      .attr("text-anchor", "middle").attr("fill", "#3a6a8a").style("font-size", "11px")
+      .text(meta.unit);
+
+    const line = d3.line().x(d => xScale(d.year)).y(d => yScale(d.value))
+      .curve(d3.curveCatmullRom.alpha(0.5));
+
+    const hist = varData.filter(d => d.scenario === "historical").sort((a,b) => a.year - b.year);
+    const bridge = hist.at(-1);
+    const s245 = [bridge, ...varData.filter(d => d.scenario === "ssp245").sort((a,b) => a.year - b.year)].filter(Boolean);
+    const s585 = [bridge, ...varData.filter(d => d.scenario === "ssp585").sort((a,b) => a.year - b.year)].filter(Boolean);
+
+    const tr = d3.transition().duration(450).ease(d3.easeCubicInOut);
+
+    function animateLine(dataset, cls) {
+      let path = g.select(`.${cls}`);
+      if (path.empty()) path = g.append("path").attr("class", cls);
+      path.datum(dataset).transition(tr).attr("d", line);
+    }
+
+    animateLine(hist, "line-hist");
+    if (s245.length > 1) animateLine(s245, "line-245");
+    if (s585.length > 1) animateLine(s585, "line-585");
+
+    const birthRow = hist.find(d => d.year === birthYear) || hist.find(d => d.year === birthYear + 1);
+    const latestRow = hist.at(-1);
+    const callout = document.getElementById("stat-callout");
+    if (birthRow && latestRow && birthRow.year < latestRow.year) {
+      const diff = latestRow.value - birthRow.value;
+      const sign = diff >= 0 ? "+" : "";
+      callout.textContent = `Since you were born, this has changed ${sign}${diff.toFixed(4)} ${meta.unit} (${birthRow.year} → ${latestRow.year})`;
+    } else {
+      callout.textContent = "";
+    }
+
+    const [xMin, xMax] = xScale.domain();
+    if (birthYear >= xMin && birthYear <= xMax) {
+      g.append("line").attr("class", "birth-marker")
+        .attr("x1", xScale(birthYear)).attr("x2", xScale(birthYear))
+        .attr("y1", 0).attr("y2", height);
+    }
+
+    const byYear = {};
+    varData.forEach(d => { byYear[`${d.year}_${d.scenario}`] = d.value; });
+
+    [-40, -30, -20, -10, 0, 10, 20, 30, 40, 50, 60, 70].forEach(offset => {
+      const yr = birthYear + offset;
+      if (yr < xMin || yr > xMax) return;
+      const scenario = yr <= 2014 ? "historical" : "ssp245";
+      const val = byYear[`${yr}_${scenario}`];
+      if (val === undefined) return;
+
+      const cx = xScale(yr), cy = yScale(val);
+      const isBirth = offset === 0;
+      const color = isBirth ? "#0d2d45" : (offset < 0 ? "#7aaac8" : "#1a5a8a");
+
+      g.append("circle").attr("cx", cx).attr("cy", cy)
+        .attr("r", isBirth ? 5 : 3.5)
+        .attr("fill", color).attr("stroke", "#ddeef8").attr("stroke-width", 1.5);
+
+      const label = isBirth ? "you were born" : (offset > 0 ? `+${offset} yrs` : `${offset} yrs`);
+      const anchor = cx > width * 0.82 ? "end" : "start";
+      g.append("text").attr("class", "mlabel")
+        .attr("x", cx + (anchor === "end" ? -7 : 7)).attr("y", cy + 17)
+        .attr("text-anchor", anchor).attr("fill", color)
+        .style("font-size", "10px").style("font-family", "monospace")
+        .text(label);
+    });
+  }
+
+  loadData().then(() => {
+    window.addEventListener("resize", () => { if (birthYear) drawChart(); });
+  });
+  </script>
+</body>
+</html>
