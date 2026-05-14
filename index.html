@@ -1,166 +1,558 @@
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>birthdayweather</title>
+  <title>Your Birthday Through Time</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
   <link rel="stylesheet" href="style.css" />
   <style>
+    :root {
+      --ink: #1a1209;
+      --paper: #f5f0e8;
+      --cream: #ede8da;
+      --warm-mid: #c8bfa8;
+      --accent: #b84c2e;
+      --accent2: #2a6b8a;
+      --accent3: #5a8a2a;
+      --faded: #8a8070;
+      --highlight: #e8d080;
+      --border: #c8bfa8;
+      --hist: #2a6b8a;
+      --s245: #5a8a2a;
+      --s585: #b84c2e;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
     body {
-      background: #ddeef8;
-      color: #0d2d45;
-      font-family: monospace;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: 'DM Mono', monospace;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Newspaper-style grain overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0.4;
+    }
+
+    /* Cloud photo background in header */
+    header {
+      border-bottom: 3px double var(--border);
+      padding: 28px 48px 20px;
       display: flex;
       flex-direction: column;
-      align-items: center;
-      padding: 40px 20px;
+      gap: 4px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    header::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: url('clouds.jpg');
+      background-size: cover;
+      background-position: center 40%;
+      opacity: 0.38;
+      pointer-events: none;
+      z-index: 0;
+      filter: saturate(0.3) brightness(1.15) sepia(0.25);
+    }
+
+    /* Paper-tone fade over the photo */
+    header::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to bottom, rgba(245,240,232,0.10) 0%, rgba(245,240,232,0.35) 100%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    header > * { position: relative; z-index: 1; }
+
+    .masthead {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 12px;
     }
 
     h1 {
-      font-size: 2rem;
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(2rem, 5vw, 3.2rem);
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: -0.02em;
+    }
+
+    .tagline {
+      font-size: 0.7rem;
+      color: var(--faded);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      border-top: 1px solid var(--border);
+      padding-top: 8px;
+      margin-top: 6px;
+    }
+
+    .main-layout {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 0;
+      min-height: calc(100vh - 110px);
+    }
+
+    /* LEFT SIDEBAR */
+    .sidebar {
+      border-right: 2px solid var(--border);
+      padding: 32px 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+      background: var(--cream);
+    }
+
+    .sidebar-section h3 {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.1rem;
+      margin-bottom: 12px;
+      font-style: italic;
+    }
+
+    .sidebar-section p {
+      font-size: 0.72rem;
+      color: var(--faded);
+      line-height: 1.7;
+    }
+
+    /* Date Inputs */
+    .date-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .date-grid label {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--faded);
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .date-grid select, .year-input select {
+      width: 100%;
+      padding: 8px 10px;
+      background: var(--paper);
+      border: 1.5px solid var(--border);
+      color: var(--ink);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.82rem;
+      appearance: none;
+      -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238a8070'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+
+    .date-grid select:focus, .year-input select:focus {
+      outline: none;
+      border-color: var(--accent2);
+    }
+
+    .year-input {
+      margin-top: 4px;
+    }
+
+    /* Variable buttons */
+    .var-pills {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .var-pill {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      border: 1.5px solid var(--border);
+      background: var(--paper);
+      color: var(--faded);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.72rem;
+      cursor: pointer;
+      transition: all 0.18s;
+      text-align: left;
+    }
+
+    .var-pill:hover { border-color: var(--ink); color: var(--ink); }
+
+    .var-pill.active {
+      border-color: var(--ink);
+      background: var(--ink);
+      color: var(--paper);
+    }
+
+    .var-pill .pill-icon {
+      font-size: 1rem;
+      width: 20px;
+      flex-shrink: 0;
+    }
+
+    /* Stat callout in sidebar */
+    .stat-box {
+      border: 1.5px solid var(--border);
+      padding: 16px;
+      background: var(--paper);
+    }
+
+    .stat-box .stat-label {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--faded);
       margin-bottom: 8px;
     }
 
-    p.desc {
-      font-size: 0.85rem;
-      color: #3a6a8a;
-      margin-bottom: 30px;
-      max-width: 600px;
-      text-align: center;
+    .stat-box .stat-value {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1;
     }
 
-    .controls {
+    .stat-box .stat-value.positive { color: var(--s585); }
+    .stat-box .stat-value.negative { color: var(--accent2); }
+
+    .stat-box .stat-desc {
+      font-size: 0.68rem;
+      color: var(--faded);
+      margin-top: 8px;
+      line-height: 1.5;
+    }
+
+    /* Legend */
+    .legend-group {
       display: flex;
+      flex-direction: column;
       gap: 8px;
+    }
+
+    .legend-item {
+      display: flex;
       align-items: center;
+      gap: 10px;
+      font-size: 0.7rem;
+      color: var(--faded);
+    }
+
+    .legend-line {
+      width: 28px;
+      height: 2px;
+      flex-shrink: 0;
+    }
+
+    /* MAIN CHART AREA */
+    .chart-area {
+      padding: 32px 40px 32px 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .chart-header {
       margin-bottom: 20px;
+    }
+
+    .chart-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.5rem;
+      font-weight: 400;
+      font-style: italic;
+      margin-bottom: 4px;
+    }
+
+    .chart-subtitle {
+      font-size: 0.7rem;
+      color: var(--faded);
+      letter-spacing: 0.06em;
+    }
+
+    /* Interaction instructions */
+    .hint-strip {
+      display: flex;
+      gap: 20px;
       flex-wrap: wrap;
-      justify-content: center;
+      margin-bottom: 12px;
+      padding: 8px 0;
+      border-top: 1px dashed var(--border);
+      border-bottom: 1px dashed var(--border);
     }
 
-    .controls select {
-      padding: 6px 10px;
-      border: 1px solid #b8d8ee;
-      background: #eef6fc;
-      color: #0d2d45;
-      font-family: monospace;
-      font-size: 0.85rem;
-      border-radius: 4px;
+    .hint {
+      font-size: 0.65rem;
+      color: var(--faded);
+      display: flex;
+      align-items: center;
+      gap: 5px;
     }
 
-    .var-btns {
+    .hint .key {
+      background: var(--cream);
+      border: 1px solid var(--border);
+      padding: 1px 6px;
+      font-size: 0.6rem;
+      border-radius: 2px;
+    }
+
+    /* SVG chart */
+    #chart-svg {
+      width: 100%;
+      display: block;
+    }
+
+    /* Tooltip */
+    #tooltip {
+      position: fixed;
+      pointer-events: none;
+      background: var(--ink);
+      color: var(--paper);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.72rem;
+      padding: 10px 14px;
+      z-index: 1000;
+      opacity: 0;
+      transition: opacity 0.12s;
+      line-height: 1.7;
+      max-width: 200px;
+      border-left: 3px solid var(--highlight);
+    }
+
+    #tooltip.visible { opacity: 1; }
+
+    /* Brush selection info */
+    #brush-info {
+      font-size: 0.7rem;
+      color: var(--faded);
+      margin-top: 6px;
+      min-height: 1.2em;
+      font-style: italic;
+    }
+
+    /* D3 axis styles injected into SVG */
+    .axis text {
+      fill: var(--faded);
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+    }
+    .axis path, .axis line { stroke: var(--border); }
+
+    .grid line { stroke: var(--border); stroke-dasharray: 2 4; stroke-opacity: 0.5; }
+    .grid path { stroke: none; }
+
+    .line-hist { fill: none; stroke: var(--hist); stroke-width: 2; }
+    .line-245  { fill: none; stroke: var(--s245); stroke-width: 2; }
+    .line-585  { fill: none; stroke: var(--s585); stroke-width: 2; }
+
+    .area-hist { fill: var(--hist); fill-opacity: 0.07; }
+    .area-245  { fill: var(--s245); fill-opacity: 0.07; }
+    .area-585  { fill: var(--s585); fill-opacity: 0.07; }
+
+    .birth-marker { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 3; opacity: 0.8; }
+    .today-marker { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.4; }
+
+    .dot-birth { fill: var(--accent); stroke: var(--paper); stroke-width: 2; }
+    .dot-decade { fill: var(--hist); stroke: var(--paper); stroke-width: 1.5; cursor: pointer; }
+    .dot-decade:hover { fill: var(--accent); }
+
+    .brush-rect { fill: var(--highlight); fill-opacity: 0.3; }
+
+    /* Scenario filter buttons */
+    .scenario-filter {
       display: flex;
       gap: 6px;
       flex-wrap: wrap;
-      justify-content: center;
-      margin-bottom: 16px;
-    }
-
-    .var-btns button {
-      padding: 4px 12px;
-      border: 1px solid #b8d8ee;
-      background: transparent;
-      color: #3a6a8a;
-      font-family: monospace;
-      font-size: 0.75rem;
-      border-radius: 3px;
-      cursor: pointer;
-    }
-
-    .var-btns button.active {
-      background: #0d2d45;
-      color: #ddeef8;
-      border-color: #0d2d45;
-    }
-
-    #chart-container {
-      background: #eef6fc;
-      border: 1px solid #b8d8ee;
-      border-radius: 6px;
-      padding: 20px;
-      width: 100%;
-      max-width: 900px;
-    }
-
-    #chart-title {
-      font-size: 1rem;
-      margin-bottom: 4px;
-    }
-
-    #chart-subtitle {
-      font-size: 0.72rem;
-      color: #3a6a8a;
-      margin-bottom: 4px;
-    }
-
-    #stat-callout {
-      font-size: 0.82rem;
-      color: #0d2d45;
-      font-weight: bold;
-      margin-bottom: 16px;
-      min-height: 1.2em;
-    }
-
-    .axis text { fill: #3a6a8a; font-family: monospace; font-size: 11px; }
-    .axis path, .axis line { stroke: #b8d8ee; }
-
-    .grid line { stroke: #b8d8ee; stroke-dasharray: 3 3; stroke-opacity: 0.6; }
-    .grid path { stroke: none; }
-
-    .line-hist { fill: none; stroke: #1a5a8a; stroke-width: 2; }
-    .line-245  { fill: none; stroke: #2a8fc0; stroke-width: 2; }
-    .line-585  { fill: none; stroke: #c0394a; stroke-width: 2; }
-
-    .birth-marker { stroke: #0d2d45; stroke-width: 1.5; stroke-dasharray: 4 4; opacity: 0.7; }
-
-    .legend {
-      display: flex;
-      gap: 20px;
       margin-top: 12px;
-      font-size: 0.72rem;
-      color: #3a6a8a;
-      flex-wrap: wrap;
     }
 
-    .legend span { display: flex; align-items: center; gap: 6px; }
-    .swatch { display: inline-block; width: 20px; height: 2px; }
+    .sc-btn {
+      padding: 4px 12px;
+      border: 1.5px solid var(--border);
+      background: var(--paper);
+      color: var(--faded);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.68rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .sc-btn.on { border-color: var(--ink); background: var(--ink); color: var(--paper); }
+
+    /* Year range annotation */
+    .range-annotation {
+      font-size: 0.68rem;
+      color: var(--faded);
+      font-style: italic;
+    }
+
+    /* Placeholder state */
+    .placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 380px;
+      color: var(--faded);
+      text-align: center;
+      gap: 16px;
+    }
+
+    .placeholder .big-icon {
+      font-size: 4rem;
+      opacity: 0.3;
+    }
+
+    .placeholder p {
+      font-size: 0.82rem;
+      font-style: italic;
+      max-width: 260px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 768px) {
+      header { padding: 20px 20px 14px; }
+      .main-layout { grid-template-columns: 1fr; }
+      .sidebar { border-right: none; border-bottom: 2px solid var(--border); }
+      .chart-area { padding: 20px; }
+    }
   </style>
 </head>
 <body>
 
-  <h1>birthdayweather</h1>
-  <p class="desc">
-    Enter your birthday to see how climate conditions on that date have shifted since 1950,
-    and how they're projected to change through 2100! Data: CMIP6 (MPI-ESM1-2-LR).
-  </p>
-
-  <div class="controls">
-    <span>Born on</span>
-    <select id="sel-month"></select>
-    <select id="sel-day"></select>
-    <select id="sel-year"></select>
+<header>
+  <div class="masthead">
+    <h1>Your Birthday Through Time</h1>
+    <div style="font-size:0.7rem;color:var(--faded);letter-spacing:0.08em">CMIP6 · MPI-ESM1-2-LR · Global Mean</div>
   </div>
+  <div class="tagline">View how climate conditions on your birthday have shifted since 1850, and where they're headed by 2100! </div>
+</header>
 
-  <div class="var-btns">
-    <button class="active" data-var="tas">Temperature (°C)</button>
-    <button data-var="pr">Precipitation (mm/day)</button>
-    <button data-var="sfcWind">Wind Speed (m/s)</button>
-    <button data-var="huss">Humidity (kg/kg)</button>
-    <button data-var="psl">Sea Level Pressure (Pa)</button>
-    <button data-var="rsds">Solar Radiation (W/m²)</button>
-  </div>
+<div id="tooltip"></div>
 
-  <div id="chart-container">
-    <div id="chart-title">Select your birthday to get started</div>
-    <div id="chart-subtitle"></div>
-    <div id="stat-callout"></div>
-    <svg id="chart"></svg>
-    <div class="legend">
-      <span><span class="swatch" style="background:#1a5a8a"></span>Historical (1950–2014)</span>
-      <span><span class="swatch" style="background:#2a8fc0"></span>SSP2-4.5</span>
-      <span><span class="swatch" style="background:#c0394a"></span>SSP5-8.5</span>
+<div class="main-layout">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+
+    <div class="sidebar-section">
+      <h3>Enter your birthday</h3>
+      <div class="date-grid">
+        <div>
+          <label>Month</label>
+          <select id="sel-month"><option value="">—</option></select>
+        </div>
+        <div>
+          <label>Day</label>
+          <select id="sel-day"><option value="">—</option></select>
+        </div>
+      </div>
+      <div class="year-input" style="margin-top:8px">
+        <label style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--faded);display:block;margin-bottom:4px">Birth Year</label>
+        <select id="sel-year"><option value="">—</option></select>
+      </div>
     </div>
-  </div>
+
+    <div class="sidebar-section">
+      <h3>Climate variable</h3>
+      <div class="var-pills" id="var-pills"></div>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>Scenarios shown</h3>
+      <div class="scenario-filter">
+        <button class="sc-btn on" data-sc="historical">Historical</button>
+        <button class="sc-btn on" data-sc="ssp245">SSP2-4.5</button>
+        <button class="sc-btn on" data-sc="ssp585">SSP5-8.5</button>
+      </div>
+      <p style="margin-top:10px">Click to toggle each scenario on or off. SSP2-4.5 = moderate emissions. SSP5-8.5 = high emissions pathway.</p>
+    </div>
+
+    <div class="sidebar-section" id="stat-section" style="display:none">
+      <div class="stat-box">
+        <div class="stat-label">Change since your birth</div>
+        <div class="stat-value" id="stat-value">—</div>
+        <div class="stat-desc" id="stat-desc"></div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>Legend</h3>
+      <div class="legend-group">
+        <div class="legend-item">
+          <div class="legend-line" style="background:var(--hist)"></div>
+          Historical (1850–2014)
+        </div>
+        <div class="legend-item">
+          <div class="legend-line" style="background:var(--s245)"></div>
+          SSP2-4.5 (2015–2100)
+        </div>
+        <div class="legend-item">
+          <div class="legend-line" style="background:var(--s585)"></div>
+          SSP5-8.5 (2015–2100)
+        </div>
+        <div class="legend-item">
+          <div class="legend-line" style="background:var(--accent);height:1px;border-top:2px dashed var(--accent)"></div>
+          Your birth year
+        </div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- MAIN CHART -->
+  <main class="chart-area">
+
+    <div class="chart-header">
+      <div class="chart-title" id="chart-title">Select your birthday to begin</div>
+      <div class="chart-subtitle" id="chart-subtitle"></div>
+    </div>
+
+    <div class="hint-strip" id="hint-strip" style="display:none">
+      <span class="hint"><span class="key">hover</span> tooltip with exact values</span>
+      <span class="hint"><span class="key">click+drag</span> zoom into a range</span>
+      <span class="hint"><span class="key">dbl-click</span> reset zoom</span>
+      <span class="hint"><span class="key">dots</span> click for decade labels</span>
+    </div>
+
+    <div id="chart-container">
+      <div class="placeholder" id="placeholder">
+        <div class="big-icon">🗓</div>
+        <p>Choose a month, day, and year using the controls on the left.</p>
+      </div>
+      <svg id="chart-svg"></svg>
+    </div>
+
+    <div id="brush-info"></div>
+
+  </main>
+</div>
 
   <div id="writeup-container">
     <h2>Project Write-Up</h2>
