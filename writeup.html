@@ -114,42 +114,41 @@
 
   <div class="writeup-container">
     <a href="index.html" class="back-link">&larr; Back to Visualization</a>
-
     <h1>Project Write-Up</h1>
     <p style="color: var(--faded); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 40px;">DSC 106 • Interactive Visualization</p>
     
     <h2>Motivation</h2>
-    <p>Our visualization enables users to explore how environmental conditions on a specific calendar date have shifted over time. Climate data can often feel overwhelmingly massive and impersonal. By allowing users to input a highly personal date—such as their birthday—and dynamically toggle between environmental variables, we transform abstract global climate projections into a tangible, personalized historical narrative.</p>
+    <p>Climate data is usually massive and hard to relate to. For this project, we wanted to make global climate projections feel personal. By letting users put in their actual birthday and toggle different environmental variables, the visualization turns abstract numbers into a personal history of how the climate has changed since 1850 and where it's going by the year 2100.</p>
 
     <h2>Rationale for Design Decisions</h2>
     <p><strong>Visual Encodings & Alternatives Considered:</strong><br>
-    We utilized a connected scatter plot (line chart) as our primary visualization, as it is the most effective visual encoding for expressing continuous temporal trends. We considered alternatives such as heatmaps (to show daily changes across the year) or stacked area charts for the projections. However, we rejected heatmaps because they make it difficult to compare exact magnitude changes across decades, and stacked areas are misleading because our future scenarios (SSP2-4.5 and SSP5-8.5) are alternative, overlapping paths, not cumulative totals. We applied a Catmull-Rom curve to the lines to smoothly express the continuous nature of environmental data.</p>
+    For our main visualization, we went with a line chart (connected scatter plot). We thought about using heatmaps to show daily changes, or stacked area charts for the projections. However, heatmaps make it really hard to compare exact numbers across different decades, and stacked area charts didn't make sense here because our future scenarios (SSP2-4.5 and SSP5-8.5) are separate possible futures, not cumulative totals you add together. To make the data look a bit more natural, we smoothed the lines out using a Catmull-Rom curve.</p>
     
     <p><strong>Color Palette:</strong><br>
-    We used a semantically resonant color scheme. Historical data is rendered in a deep blue, representing established records. The projected scenarios diverge visually: SSP2-4.5 (a moderate emissions scenario) diverges in green, while SSP5-8.5 (a high emissions scenario) diverges sharply in red to draw immediate visual attention to the extreme outcomes of the high-emissions path.</p>
+    We wanted the colors to be intuitive. The historical data is a deep blue since it represents the established baseline. For the projections, we used green for SSP2-4.5 (the more moderate emissions path) and a sharp, contrasting red for SSP5-8.5 (the high emissions path) so the extreme outcomes immediately jump out at you.</p>
 
     <h2>Interaction Design</h2>
-    <p>Each interactive element maps directly to the <strong>Yi et al. (2007) interaction taxonomy</strong> covered in lecture, turning a static chart into an exploratory dashboard:</p>
+    <p>Each interactive element maps directly to the Yi et al. (2007) interaction taxonomy covered in lecture, turning a static chart into an exploratory dashboard:</p>
     <ul>
-      <li><strong>Select ("identify something as interesting"):</strong> Decade dots are hoverable/clickable targets placed every 10 years along the line. Hovering a dot triggers a tooltip showing the exact year, variable value, unit, and scenario. This implements point selection: the user selects a discrete data point to identify its precise value. The dots are sized (r=5) to be easily targetable without obscuring the line.</li>
-      <li><strong>Connect ("show me related items"):</strong> The continuous hover tooltip implements brushing-and-linking across scenarios. As the user moves their cursor horizontally over the chart, a vertical crosshair snaps to the nearest year and the tooltip simultaneously displays values for all three active scenarios at that year — historical, SSP2-4.5, and SSP5-8.5. This links the three lines by a shared time coordinate, making cross-scenario comparison effortless without requiring the user to read the y-axis for each line separately.</li>
-      <li><strong>Filter ("show me something conditionally"):</strong> The scenario toggle buttons (Historical / SSP2-4.5 / SSP5-8.5) implement dynamic filtering. Each button toggles its scenario's line and area on or off, instantly redrawing the chart. This lets users isolate a single scenario (e.g. "show me only the high-emissions future") or compare two while hiding the third. The climate variable pills are a second filter layer: selecting Temperature, Precipitation, Wind Speed, etc., reloads the entire dataset for that variable.</li>
-      <li><strong>Abstract/Elaborate ("show me more or less detail"):</strong> The stat callout box provides an elaboration of the most personally relevant number: the net change in the selected variable between the user's birth year and 2014 (the end of the historical record). It shows the direction, magnitude, and unit, with the birth-year and end-year values as context. This is a details-on-demand pattern: the summary-level view is the chart; the elaboration is the callout.</li>
-      <li><strong>Explore ("show me something else" / zoom):</strong> Drag-to-zoom implements semantic zoom: click and drag horizontally on the chart to define a year range, and the chart re-renders with that range as the new x-domain, rescaling both axes to show the sub-range in full detail. This is semantic zoom (the data space transforms, not just the viewport), consistent with the distinction drawn in lecture between geometric and semantic zoom. Double-click resets to the full 1850–2100 view.</li>
-      <li><strong>Reconfigure ("show me a different arrangement"):</strong> Switching between the six climate variables reconfigures the entire chart: the y-axis rescales, the unit changes, the lines redraw, and the stat callout updates. This is a reconfiguration in the Yi et al. sense — the same temporal structure is preserved but the data dimension being displayed changes entirely.</li>
+      <li><strong>Connect ("show me related items"):</strong> As you move your mouse horizontally across the chart, a vertical crosshair snaps to the nearest year, and the tooltip shows the values for all active scenarios at once. This links the lines together by time, so you don't have to bounce your eyes back and forth to the y-axis to compare them.</li>
+      <li><strong>Filter ("show me something conditionally"):</strong> The scenario buttons on the side let you filter what's shown. You can toggle the historical line or either of the future pathways on and off to isolate just one or compare two. The variable buttons (Temperature, Precipitation, etc.) act as a second filter to completely swap out the dataset.</li>
+      <li><strong>Abstract/Elaborate ("show me more or less detail"):</strong> The callout box on the left gives you details-on-demand. While the main chart gives the big picture (abstract), the callout elaborates by showing the exact net change in that specific variable from your birth year up to 2014 (the end of the historical record).</li>
+      <li><strong>Explore ("show me something else" / zoom):</strong> We added semantic zoom. If you click and drag horizontally on the chart, it rescales the x and y axes to show just that specific chunk of years in full detail. It transforms the data space, not just the viewport. Double-clicking resets it back to the full 1850–2100 view.</li>
+      <li><strong>Reconfigure ("show me a different arrangement"):</strong> Clicking through the different climate variables reconfigures the whole setup. The timeline stays the same, but the data dimension entirely changes, rescaling the y-axis and updating the units.</li>
     </ul>
 
     <h2>Data Transformations</h2>
-    <p>We utilized the CMIP6 (Coupled Model Intercomparison Project) dataset, specifically targeting the MPI-ESM1-2-LR model. Because the raw Zarr data on Google Cloud is exceptionally large, querying spatial arrays dynamically in the browser was infeasible. To optimize the interaction, we transformed the data beforehand using Python: we aggregated the historical and projected data cubes down to global spatial averages, subsetting the massive database to extract values for specific days of the year, and exporting them as highly compressed CSV files. February 29th was intentionally excluded due to data sparsity in standard climate calendars.</p>
+    <p>We used the CMIP6 dataset, specifically the MPI-ESM1-2-LR model. The original data is stored in massive Zarr files on Google Cloud, and it was extremely difficult to query those spatial arrays dynamically in the browser as it was freezing up. To fix this, we used Python to pre-process everything. We took the historical and projected data cubes, averaged them out globally, and pulled only the values for specific days of the year. Then we exported them as lightweight CSVs so D3 could handle them quickly. We also dropped February 29th since it was too sparse across the climate calendars.</p>
 
     <h2>Development Process</h2>
-    <p>The development was divided iteratively among the team to ensure rapid prototyping and parallel progress. The work was split as follows:</p>
+    <p>We worked iteratively so we could build and test in parallel. Here is how we split up the work:</p>
     <ul>
-      <li><strong>Nayana Naineni:</strong> D3.js core charting, visual encodings</li>
-      <li><strong>Ananya Wasker:</strong> Interactions, UI dashboard architecture</li>
-      <li><strong>Jookyoung Lee:</strong> CSS styling layout, design/process documentation</li>
+      <li><strong>Nayana Naineni:</strong> Built the core D3.js charts and handled the main visual encodings.</li>
+      <li><strong>Ananya Wasker:</strong> Programmed the interactions, semantic zooming, and set up the overall UI dashboard architecture.</li>
+      <li><strong>Jookyoung Lee:</strong> Did the CSS styling and layout, and wrote the design/process documentation.</li>
     </ul>
-    <p><strong>Time & Challenges:</strong> We spent approximately 20-25 people-hours on this project. The aspect that took the absolute most time was data wrangling. Navigating Google Cloud authentication, querying the multi-dimensional NetCDF/Zarr files, and formatting the raw CMIP6 spatial data into flat, lightweight CSV structures that D3.js could quickly render without freezing the user's browser was a significant technical hurdle.</p>
+    <p><strong>Time & Challenges:</strong> In total, we spent about 25 to 30 people-hours on this. The hardest and most time-consuming part was the data wrangling. Navigating Google Cloud authentication, querying the multi-dimensional NetCDF/Zarr files, and formatting the raw CMIP6 spatial data into flat, lightweight CSV structures that D3.js could quickly render without freezing the user's browser was a significant technical hurdle.</p>
+
   </div>
 
 </body>
