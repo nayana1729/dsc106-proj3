@@ -1,0 +1,17 @@
+/* Write-up Styling */
+#writeup-container {
+  background: #ffffff;
+  border: 1px solid #b8d8ee;
+  border-radius: 6px;
+  padding: 30px;
+  width: 100%;
+  max-width: 900px;
+  margin-top: 30px;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  color: #0d2d45;
+  line-height: 1.6;
+}
+#writeup-container h2 { font-size: 1.5rem; margin-bottom: 15px; font-family: monospace; }
+#writeup-container h3 { font-size: 1.1rem; color: #1a5a8a; margin-top: 25px; margin-bottom: 10px; border-bottom: 1px solid #eef6fc; padding-bottom: 5px; }
+#writeup-container p { font-size: 0.95rem; margin-bottom: 15px; }
+#writeup-container ul { font-size: 0.95rem; margin-bottom: 15px; padding-left: 20px; }
