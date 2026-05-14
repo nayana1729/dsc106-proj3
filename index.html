@@ -3,10 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Your Birthday Through Time</title>
+  <title>Yor Birthday Through Time</title>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
-  <link rel="stylesheet" href="style.css" />
   <style>
     :root {
       --ink: #1a1209;
@@ -536,7 +535,7 @@
 
     <div class="hint-strip" id="hint-strip" style="display:none">
       <span class="hint"><span class="key">hover</span> tooltip with exact values</span>
-      <span class="hint"><span class="key">click+drag</span> zoom into a range</span>
+      <span class="hint"><span class="key">click+drag</span> brush to zoom into a range</span>
       <span class="hint"><span class="key">dbl-click</span> reset zoom</span>
       <span class="hint"><span class="key">dots</span> click for decade labels</span>
     </div>
@@ -554,34 +553,445 @@
   </main>
 </div>
 
-  <div id="writeup-container">
-    <h2>Project Write-Up</h2>
-    
-    <h3>Motivation</h3>
-    <p>Our visualization enables users to explore how environmental conditions on a specific calendar date have shifted over time. Climate data can often feel overwhelmingly massive and impersonal. By allowing users to input a highly personal date—such as their birthday—and dynamically toggle between environmental variables, we transform abstract global climate projections into a tangible, personalized historical narrative.</p>
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+const MODEL = "MPI-ESM1-2-LR";
+const MARGIN = { top: 20, right: 48, bottom: 50, left: 64 };
 
-    <h3>Design Decisions & Visual Encodings</h3>
-    <p>We utilized a connected scatter plot (line chart) as our primary visualization, as it is the most effective visual encoding for expressing continuous temporal trends. The design choices were heavily focused on clarity and narrative:</p>
-    <ul>
-      <li><strong>Marks & Channels:</strong> The x-axis (horizontal position) encodes the Year, and the y-axis (vertical position) encodes the selected climate variable's value. We applied a Catmull-Rom curve to the lines to smoothly express the continuous nature of environmental data.</li>
-      <li><strong>Color Palette:</strong> We used a semantically resonant color scheme. Historical data is rendered in a deep blue, representing established records. The projected scenarios diverge visually: SSP2-4.5 continues in a lighter blue, while SSP5-8.5 diverges sharply in red to draw attention to extreme outcomes.</li>
-      <li><strong>Interactive Context:</strong> We encoded specific life milestones (+10, +20, +30 years) as point markers along the path, dynamically calculating the difference between the user's birth year and the modern day to provide immediate, context-heavy details on demand.</li>
-    </ul>
+const MONTHS = ["January","February","March","April","May","June",
+                "July","August","September","October","November","December"];
 
-    <h3>Data Transformations</h3>
-    <p>We utilized the CMIP6 (Coupled Model Intercomparison Project) dataset, specifically targeting the MPI-ESM1-2-LR model for daily environmental variables. Because the raw Zarr data on Google Cloud is exceptionally large, querying and filtering spatial arrays dynamically in the browser was infeasible. To optimize the interaction, we transformed the data beforehand: we filtered the historical and projected tables down to global spatial averages, subsetting the data by specific days of the year, and exporting them as highly compressed CSV files. February 29th was excluded due to data sparsity across models.</p>
+const VARS = [
+  { key: "tas",     label: "Temperature",      unit: "°C",     icon: "🌡" },
+  { key: "pr",      label: "Precipitation",    unit: "mm/day", icon: "🌧" },
+  { key: "sfcWind", label: "Wind Speed",       unit: "m/s",    icon: "💨" },
+  { key: "huss",    label: "Humidity",         unit: "kg/kg",  icon: "💧" },
+  { key: "psl",     label: "Sea Level Pressure", unit: "Pa",   icon: "🔵" },
+  { key: "rsds",    label: "Solar Radiation",  unit: "W/m²",   icon: "☀" },
+];
 
-    <h3>Development Process</h3>
-    <p>The development was divided iteratively among the team to ensure rapid prototyping and debugging. The work was split as follows:</p>
-    <ul>
-      <li><strong>Nayana Naineni:</strong> D3.js core charting, line animations, and milestone marker calculations.</li>
-      <li><strong>Ananya Wasker:</strong> Interactive event listeners, data state management, and dropdown filtering logic.</li>
-      <li><strong>Jookyoung Lee:</strong> UI dashboard architecture, CSS styling, and design documentation.</li>
-    </ul>
-    <p>We spent approximately 18-20 people-hours on this project. The most time-consuming aspect was data wrangling—navigating Google Cloud authentication and formatting the raw CMIP6 spatial data into a structure that D3.js could quickly render without freezing the user's browser.</p>
-  </div>
+// ============================================================
+// STATE
+// ============================================================
+let state = {
+  month: null, day: null, year: null,
+  variable: "tas",
+  data: [],
+  xDomain: null,  // null = full range; [min,max] = brushed
+  scenarios: { historical: true, ssp245: true, ssp585: true },
+  brushActive: false,
+};
 
-  <script src="script.js"></script>
- 
+// ============================================================
+// INIT CONTROLS
+// ============================================================
+const selMonth = document.getElementById("sel-month");
+const selDay   = document.getElementById("sel-day");
+const selYear  = document.getElementById("sel-year");
+
+selMonth.innerHTML = '<option value="">—</option>' +
+  MONTHS.map((m,i) => `<option value="${i+1}">${m}</option>`).join("");
+
+selYear.innerHTML = '<option value="">—</option>' +
+  Array.from({length: 125}, (_,i) => 2024 - i)
+    .map(y => `<option value="${y}">${y}</option>`).join("");
+
+function updateDays() {
+  const m = +selMonth.value, y = +selYear.value || 2000;
+  if (!m) { selDay.innerHTML = '<option value="">—</option>'; return; }
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const cur = +selDay.value;
+  selDay.innerHTML = '<option value="">—</option>' +
+    Array.from({length: daysInMonth}, (_,i) => i+1)
+      .map(d => `<option value="${d}"${d===cur?" selected":""}>${d}</option>`).join("");
+}
+
+// Variable pills
+const pillContainer = document.getElementById("var-pills");
+VARS.forEach(v => {
+  const btn = document.createElement("button");
+  btn.className = "var-pill" + (v.key === "tas" ? " active" : "");
+  btn.dataset.var = v.key;
+  btn.innerHTML = `<span class="pill-icon">${v.icon}</span><span>${v.label}<br><span style="opacity:0.5;font-size:0.65rem">${v.unit}</span></span>`;
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".var-pill").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    state.variable = v.key;
+    state.xDomain = null;
+    drawChart();
+  });
+  pillContainer.appendChild(btn);
+});
+
+// Scenario filter
+document.querySelectorAll(".sc-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const sc = btn.dataset.sc;
+    state.scenarios[sc] = !state.scenarios[sc];
+    btn.classList.toggle("on", state.scenarios[sc]);
+    drawChart();
+  });
+});
+
+// Date change
+async function onDateChange() {
+  updateDays();
+  const m = +selMonth.value, d = +selDay.value, y = +selYear.value;
+  if (!m || !d || !y) return;
+  state.month = m; state.day = d; state.year = y;
+  state.xDomain = null;
+  await loadData();
+  drawChart();
+}
+
+selMonth.addEventListener("change", onDateChange);
+selDay.addEventListener("change", onDateChange);
+selYear.addEventListener("change", onDateChange);
+
+// ============================================================
+// DATA LOADING
+// ============================================================
+async function loadData() {
+  const mm = String(state.month).padStart(2,"0");
+  let dd = state.day;
+  // leap day fallback
+  if (state.month === 2 && state.day === 29) dd = 28;
+  const ddStr = String(dd).padStart(2,"0");
+  try {
+    const raw = await d3.csv(`data/climate_${mm}_${ddStr}.csv`, d => ({
+      year: +d.year, variable: d.variable,
+      value: +d.value, scenario: d.scenario, model: d.model,
+    }));
+    state.data = raw.filter(d => d.model === MODEL);
+  } catch(e) {
+    console.error("Load error", e);
+    state.data = [];
+  }
+}
+
+// ============================================================
+// DRAW CHART
+// ============================================================
+function drawChart() {
+  const { month, day, year, variable, data, scenarios, xDomain } = state;
+  if (!year || !data.length) return;
+
+  const varMeta = VARS.find(v => v.key === variable);
+  const container = document.getElementById("chart-container");
+
+  // Show chart, hide placeholder
+  document.getElementById("placeholder").style.display = "none";
+  document.getElementById("hint-strip").style.display = "flex";
+
+  // Titles
+  const mm2 = (month===2 && day===29) ? 28 : day;
+  document.getElementById("chart-title").textContent =
+    `${varMeta.label} on ${MONTHS[month-1]} ${mm2}`;
+  document.getElementById("chart-subtitle").textContent =
+    `Global mean · CMIP6 MPI-ESM1-2-LR · ${varMeta.unit}`;
+
+  const W = container.clientWidth;
+  const H = Math.min(420, Math.max(280, W * 0.42));
+  const width = W - MARGIN.left - MARGIN.right;
+  const height = H - MARGIN.top - MARGIN.bottom;
+
+  const svg = d3.select("#chart-svg")
+    .attr("width", W).attr("height", H);
+  svg.selectAll("*").remove();
+
+  // ---- Data prep ----
+  const varData = data.filter(d => d.variable === variable);
+  const hist = varData.filter(d => d.scenario==="historical").sort((a,b)=>a.year-b.year);
+  const bridge = hist.at(-1);
+  const s245raw = varData.filter(d => d.scenario==="ssp245").sort((a,b)=>a.year-b.year);
+  const s585raw = varData.filter(d => d.scenario==="ssp585").sort((a,b)=>a.year-b.year);
+  const s245 = bridge ? [bridge, ...s245raw] : s245raw;
+  const s585 = bridge ? [bridge, ...s585raw] : s585raw;
+
+  const allData = varData;
+  const fullXMin = d3.min(allData, d => d.year);
+  const fullXMax = d3.max(allData, d => d.year);
+
+  const xMin = xDomain ? xDomain[0] : fullXMin;
+  const xMax = xDomain ? xDomain[1] : fullXMax;
+
+  // Filter to visible range
+  const visHist = hist.filter(d => d.year >= xMin && d.year <= xMax);
+  const visS245 = s245.filter(d => d.year >= xMin && d.year <= xMax);
+  const visS585 = s585.filter(d => d.year >= xMin && d.year <= xMax);
+
+  // Scales
+  const xScale = d3.scaleLinear().domain([xMin, xMax]).range([0, width]).nice();
+
+  const allVisible = [
+    ...(scenarios.historical ? visHist : []),
+    ...(scenarios.ssp245 ? visS245 : []),
+    ...(scenarios.ssp585 ? visS585 : []),
+  ];
+  const yVals = allVisible.map(d => d.value);
+  const yPad = (d3.max(yVals) - d3.min(yVals)) * 0.12 || 0.5;
+  const yScale = d3.scaleLinear()
+    .domain([d3.min(yVals) - yPad, d3.max(yVals) + yPad])
+    .range([height, 0]).nice();
+
+  const g = svg.append("g")
+    .attr("transform", `translate(${MARGIN.left},${MARGIN.top})`);
+
+  // ---- Clip path ----
+  svg.append("defs").append("clipPath").attr("id", "chart-clip")
+    .append("rect").attr("width", width).attr("height", height);
+
+  // ---- Grid ----
+  g.append("g").attr("class","grid")
+    .attr("transform",`translate(0,${height})`)
+    .call(d3.axisBottom(xScale).ticks(8).tickSize(-height).tickFormat(""));
+  g.append("g").attr("class","grid")
+    .call(d3.axisLeft(yScale).ticks(6).tickSize(-width).tickFormat(""));
+
+  // ---- Axes ----
+  g.append("g").attr("class","axis")
+    .attr("transform",`translate(0,${height})`)
+    .call(d3.axisBottom(xScale).ticks(8).tickFormat(d3.format("d")));
+  g.append("g").attr("class","axis")
+    .call(d3.axisLeft(yScale).ticks(6));
+
+  // Y label
+  g.append("text")
+    .attr("transform","rotate(-90)")
+    .attr("x", -height/2).attr("y", -MARGIN.left + 16)
+    .attr("text-anchor","middle")
+    .attr("fill","var(--faded)")
+    .style("font-family","DM Mono, monospace")
+    .style("font-size","11px")
+    .text(varMeta.unit);
+
+  // ---- Line + area generators ----
+  const lineGen = d3.line().x(d=>xScale(d.year)).y(d=>yScale(d.value)).curve(d3.curveCatmullRom.alpha(0.5));
+  const areaGen = d3.area().x(d=>xScale(d.year)).y0(height).y1(d=>yScale(d.value)).curve(d3.curveCatmullRom.alpha(0.5));
+
+  const linesG = g.append("g").attr("clip-path","url(#chart-clip)");
+
+  function drawLine(dataset, lineCls, areaCls) {
+    if (!dataset.length) return;
+    linesG.append("path").datum(dataset).attr("class",areaCls).attr("d",areaGen);
+    linesG.append("path").datum(dataset).attr("class",lineCls).attr("d",lineGen);
+  }
+
+  if (scenarios.historical) drawLine(visHist, "line-hist", "area-hist");
+  if (scenarios.ssp245 && visS245.length > 1) drawLine(visS245, "line-245", "area-245");
+  if (scenarios.ssp585 && visS585.length > 1) drawLine(visS585, "line-585", "area-585");
+
+  // ---- Vertical markers ----
+  const markersG = g.append("g").attr("clip-path","url(#chart-clip)");
+
+  // Birth year marker
+  if (year >= xMin && year <= xMax) {
+    markersG.append("line").attr("class","birth-marker")
+      .attr("x1",xScale(year)).attr("x2",xScale(year))
+      .attr("y1",0).attr("y2",height);
+    markersG.append("text")
+      .attr("x", xScale(year) + 4).attr("y", 14)
+      .style("font-size","10px").style("fill","var(--accent)")
+      .style("font-family","DM Mono, monospace")
+      .text(`born ${year}`);
+  }
+
+  // 2024 "today" marker
+  if (2024 >= xMin && 2024 <= xMax) {
+    markersG.append("line").attr("class","today-marker")
+      .attr("x1",xScale(2024)).attr("x2",xScale(2024))
+      .attr("y1",0).attr("y2",height);
+  }
+
+  // ---- Build lookups ----
+  const byYear = {};
+  varData.forEach(d => { byYear[`${d.year}_${d.scenario}`] = d.value; });
+
+  const yearLookup = {};
+  varData.forEach(d => {
+    if (!yearLookup[d.year]) yearLookup[d.year] = {};
+    yearLookup[d.year][d.scenario] = d.value;
+  });
+  const years = Object.keys(yearLookup).map(Number).sort((a,b)=>a-b);
+
+  const tooltip = document.getElementById("tooltip");
+
+  function getDotVal(yr) {
+    if (yr <= 2014) return byYear[`${yr}_historical`];
+    return byYear[`${yr}_ssp245`] ?? byYear[`${yr}_ssp585`];
+  }
+
+  // ---- Brush (click+drag to zoom) — added BEFORE interactive layers ----
+  // ---- Hover overlay for continuous tooltip ----
+  const hoverLine = g.append("line")
+    .attr("y1",0).attr("y2",height)
+    .style("stroke","var(--ink)").style("stroke-width",1).style("stroke-dasharray","3 3")
+    .style("opacity",0).style("pointer-events","none");
+
+  const hoverRect = g.append("rect")
+    .attr("width", width).attr("height", height)
+    .attr("fill","transparent")
+    .style("cursor","crosshair")
+    .on("mousemove", function(event) {
+      const [mx] = d3.pointer(event);
+      const yr = Math.round(xScale.invert(mx));
+      const nearest = years.reduce((a,b) => Math.abs(b-yr)<Math.abs(a-yr) ? b : a);
+      const vals = yearLookup[nearest];
+      if (!vals) return;
+
+      hoverLine.attr("x1", xScale(nearest)).attr("x2", xScale(nearest)).style("opacity", 0.4);
+
+      let html = `<strong>${nearest}</strong>`;
+      if (scenarios.historical && vals.historical !== undefined)
+        html += `<br>Hist: ${vals.historical.toFixed(4)} ${varMeta.unit}`;
+      if (scenarios.ssp245 && vals.ssp245 !== undefined)
+        html += `<br>SSP2-4.5: ${vals.ssp245.toFixed(4)} ${varMeta.unit}`;
+      if (scenarios.ssp585 && vals.ssp585 !== undefined)
+        html += `<br>SSP5-8.5: ${vals.ssp585.toFixed(4)} ${varMeta.unit}`;
+
+      tooltip.innerHTML = html;
+      tooltip.classList.add("visible");
+      tooltip.style.left = (event.clientX + 14) + "px";
+      tooltip.style.top  = (event.clientY - 10) + "px";
+    })
+    .on("mouseleave", () => {
+      hoverLine.style("opacity", 0);
+      tooltip.classList.remove("visible");
+    })
+    .on("dblclick", () => {
+      state.xDomain = null;
+      document.getElementById("brush-info").textContent = "";
+      drawChart();
+    });
+
+  // ---- Decade dots — on top of everything ----
+  // ---- Native drag-to-zoom (mousedown/mousemove/mouseup on SVG element) ----
+  // Kept outside D3 event system so it doesn't conflict with hover or dblclick
+  const svgEl = document.getElementById("chart-svg");
+  let dragStartX = null;
+  let previewRect = null;
+
+  svgEl.addEventListener("mousedown", function(e) {
+    if (e.button !== 0) return;
+    const rect = svgEl.getBoundingClientRect();
+    const x = e.clientX - rect.left - MARGIN.left;
+    if (x < 0 || x > width) return;
+    dragStartX = x;
+    // create preview rect
+    previewRect = document.createElementNS("http://www.w3.org/2000/svg","rect");
+    previewRect.setAttribute("x", MARGIN.left + x);
+    previewRect.setAttribute("y", MARGIN.top);
+    previewRect.setAttribute("width", 0);
+    previewRect.setAttribute("height", height);
+    previewRect.setAttribute("fill", "var(--highlight)");
+    previewRect.setAttribute("fill-opacity", "0.25");
+    previewRect.setAttribute("pointer-events", "none");
+    svgEl.appendChild(previewRect);
+  });
+
+  svgEl.addEventListener("mousemove", function(e) {
+    if (dragStartX === null) return;
+    const rect = svgEl.getBoundingClientRect();
+    const x = Math.max(0, Math.min(width, e.clientX - rect.left - MARGIN.left));
+    const x0 = Math.min(dragStartX, x);
+    const x1 = Math.max(dragStartX, x);
+    previewRect.setAttribute("x", MARGIN.left + x0);
+    previewRect.setAttribute("width", x1 - x0);
+  });
+
+  svgEl.addEventListener("mouseup", function(e) {
+    if (dragStartX === null) return;
+    if (previewRect) { svgEl.removeChild(previewRect); previewRect = null; }
+    const rect = svgEl.getBoundingClientRect();
+    const x = Math.max(0, Math.min(width, e.clientX - rect.left - MARGIN.left));
+    const x0 = Math.min(dragStartX, x);
+    const x1 = Math.max(dragStartX, x);
+    dragStartX = null;
+    if (x1 - x0 < 5) return; // too small = click, not drag
+    const yr0 = Math.round(xScale.invert(x0));
+    const yr1 = Math.round(xScale.invert(x1));
+    state.xDomain = [yr0, yr1];
+    document.getElementById("brush-info").textContent =
+      `Zoomed to ${yr0}–${yr1}. Double-click chart to reset.`;
+    drawChart();
+  });
+
+  svgEl.addEventListener("mouseleave", function() {
+    if (previewRect) { svgEl.removeChild(previewRect); previewRect = null; }
+    dragStartX = null;
+  });
+
+  // Birthday dot
+  const birthVal = getDotVal(year);
+  if (birthVal !== undefined && year >= xMin && year <= xMax) {
+    dotsG.append("circle")
+      .attr("class","dot-birth")
+      .attr("cx", xScale(year)).attr("cy", yScale(birthVal))
+      .attr("r", 6);
+  }
+
+  // Decade dots
+  const decadeStart = Math.ceil(xMin / 10) * 10;
+  for (let yr = decadeStart; yr <= xMax; yr += 10) {
+    if (yr < xMin) continue;
+    const val = getDotVal(yr);
+    if (val === undefined) continue;
+    const cx = xScale(yr), cy = yScale(val);
+
+    dotsG.append("circle")
+      .attr("class","dot-decade")
+      .attr("cx", cx).attr("cy", cy).attr("r", 5)
+      .style("cursor","pointer")
+      .on("mouseover", function(event) {
+        const sc = yr <= 2014 ? "historical" : "ssp245";
+        tooltip.innerHTML = `<strong>${yr}</strong><br>${varMeta.label}<br>${val.toFixed(4)} ${varMeta.unit}<br><span style="opacity:0.6">${sc}</span>`;
+        tooltip.classList.add("visible");
+        tooltip.style.left = (event.clientX + 14) + "px";
+        tooltip.style.top  = (event.clientY - 10) + "px";
+      })
+      .on("mousemove", function(event) {
+        tooltip.style.left = (event.clientX + 14) + "px";
+        tooltip.style.top  = (event.clientY - 10) + "px";
+      })
+      .on("mouseout", () => tooltip.classList.remove("visible"));
+  }
+
+  // ---- Stat callout ----
+  const birthRow = hist.find(d => d.year === year);
+  const latestHist = hist.at(-1);
+  const statSection = document.getElementById("stat-section");
+  const statValue   = document.getElementById("stat-value");
+  const statDesc    = document.getElementById("stat-desc");
+
+  if (birthRow && latestHist && birthRow.year < latestHist.year) {
+    const diff = latestHist.value - birthRow.value;
+    const sign = diff >= 0 ? "+" : "";
+    statSection.style.display = "block";
+    statValue.textContent = `${sign}${diff.toFixed(4)} ${varMeta.unit}`;
+    statValue.className = "stat-value " + (diff > 0 ? "positive" : diff < 0 ? "negative" : "");
+    statDesc.textContent =
+      `From ${birthRow.value.toFixed(3)} in ${birthRow.year} to ${latestHist.value.toFixed(3)} in ${latestHist.year}`;
+  } else {
+    statSection.style.display = "none";
+  }
+
+  // ---- Brush info for current zoom ----
+  if (xDomain) {
+    document.getElementById("brush-info").textContent =
+      `Showing ${xDomain[0]}–${xDomain[1]}. Double-click chart to reset.`;
+  }
+}
+
+// ============================================================
+// RESPONSIVE RESIZE
+// ============================================================
+let resizeTimer;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (state.year) drawChart(); }, 120);
+});
+</script>
 </body>
 </html>
